@@ -5,11 +5,8 @@ import (
 	"net/http"
 
 	appInfoHandlers "github.com/fraineri/plexo_backend/internal/app_info/handlers"
-	appInfoPersistance "github.com/fraineri/plexo_backend/internal/app_info/persistance"
-	appInfoServices "github.com/fraineri/plexo_backend/internal/app_info/services"
-	appInfoUseCases "github.com/fraineri/plexo_backend/internal/app_info/usecases"
 	"github.com/fraineri/plexo_backend/internal/core/persistance"
-	"github.com/fraineri/plexo_backend/internal/core/persistance/uow"
+
 	"github.com/fraineri/plexo_backend/internal/core/settings"
 	"github.com/fraineri/plexo_backend/internal/core/types"
 	"github.com/gorilla/mux"
@@ -38,16 +35,8 @@ func main() {
 	}()
 	log.Println("Database connection initialized successfully.")
 
-	uow := uow.NewUnitOfWork(db)
-
-	appInfoRepository := appInfoPersistance.NewAppInfoRepository(uow)
-	appInfoService := appInfoServices.NewAppInfoService(appInfoRepository)
-	getAppInfoUseCase := appInfoUseCases.NewGetAppInfo(uow, appInfoService)
-	disableAppUsecase := appInfoUseCases.NewDisableApp(uow, appInfoService)
-	enableAppUsecase := appInfoUseCases.NewEnableApp(uow, appInfoService)
-
 	routers := []types.Router{
-		appInfoHandlers.NewAppInfoHandler(getAppInfoUseCase, disableAppUsecase, enableAppUsecase),
+		appInfoHandlers.NewAppInfoHandler(db),
 	}
 
 	mainRouter := mux.NewRouter()

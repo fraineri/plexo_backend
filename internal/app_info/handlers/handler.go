@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/fraineri/plexo_backend/internal/app_info/entities"
 	"github.com/fraineri/plexo_backend/internal/app_info/handlers/dtos"
+	"github.com/fraineri/plexo_backend/internal/app_info/persistance"
+	"github.com/fraineri/plexo_backend/internal/app_info/services"
 	"github.com/fraineri/plexo_backend/internal/app_info/usecases"
+	"github.com/fraineri/plexo_backend/internal/core/persistance/uow"
 	"github.com/gorilla/mux"
 )
 
@@ -15,20 +19,14 @@ type AppInfo = entities.AppInfo
 type AppInfoResponseDTO = dtos.AppInfoResponseDTO
 
 type AppInfoHandler struct {
-	getAppInfoUsecase usecases.GetAppInfoUsecase
-	disableAppUsecase usecases.DisableAppUsecase
-	enableAppUsecase  usecases.EnableAppUsecase
+	db *sql.DB
 }
 
 func NewAppInfoHandler(
-	getAppInfoUsecase usecases.GetAppInfoUsecase,
-	disableAppUsecase usecases.DisableAppUsecase,
-	enableAppUsecase usecases.EnableAppUsecase,
+	db *sql.DB,
 ) *AppInfoHandler {
 	return &AppInfoHandler{
-		getAppInfoUsecase: getAppInfoUsecase,
-		disableAppUsecase: disableAppUsecase,
-		enableAppUsecase:  enableAppUsecase,
+		db: db,
 	}
 }
 
@@ -39,7 +37,12 @@ func (h *AppInfoHandler) RegisterRoutes(router *mux.Router) {
 }
 
 func (h *AppInfoHandler) getAppInfo(w http.ResponseWriter, r *http.Request) {
-	result, err := h.getAppInfoUsecase.Execute(r.Context())
+	uow := uow.NewUnitOfWork(h.db)
+	appInfoRepository := persistance.NewAppInfoRepository(uow)
+	appInfoService := services.NewAppInfoService(appInfoRepository)
+	getAppInfoUsecase := usecases.NewGetAppInfo(uow, appInfoService)
+
+	result, err := getAppInfoUsecase.Execute(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get app info: %v", err), http.StatusInternalServerError)
 		return
@@ -59,7 +62,12 @@ func (h *AppInfoHandler) getAppInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AppInfoHandler) disableApp(w http.ResponseWriter, r *http.Request) {
-	result, err := h.disableAppUsecase.Execute(r.Context())
+	uow := uow.NewUnitOfWork(h.db)
+	appInfoRepository := persistance.NewAppInfoRepository(uow)
+	appInfoService := services.NewAppInfoService(appInfoRepository)
+	disableAppUsecase := usecases.NewDisableApp(uow, appInfoService)
+
+	result, err := disableAppUsecase.Execute(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to disable app: %v", err), http.StatusInternalServerError)
 		return
@@ -79,7 +87,12 @@ func (h *AppInfoHandler) disableApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AppInfoHandler) enableApp(w http.ResponseWriter, r *http.Request) {
-	result, err := h.enableAppUsecase.Execute(r.Context())
+	uow := uow.NewUnitOfWork(h.db)
+	appInfoRepository := persistance.NewAppInfoRepository(uow)
+	appInfoService := services.NewAppInfoService(appInfoRepository)
+	enableAppUsecase := usecases.NewEnableApp(uow, appInfoService)
+
+	result, err := enableAppUsecase.Execute(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to enable app: %v", err), http.StatusInternalServerError)
 		return
