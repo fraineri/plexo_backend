@@ -64,3 +64,6 @@ fuzz-cache/
 
 # Go build output
 bin/
+
+# Ignore __debug_ files
+__debug_bin*
