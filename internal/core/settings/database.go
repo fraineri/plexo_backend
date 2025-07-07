@@ -16,6 +16,13 @@ type DatabaseSettings struct {
 	PostgresPortRead     int    `env:"POSTGRES_PORT_READ,required"`
 	PostgresDBRead       string `env:"POSTGRES_DB_READ,required"`
 	PostgresSSLModeRead  string `env:"POSTGRES_SSL_MODE_READ,required"`
+
+	PostgresUserMigrations     string `env:"POSTGRES_USER_MIGRATIONS,required"`
+	PostgresPasswordMigrations string `env:"POSTGRES_PASSWORD_MIGRATIONS,required"`
+	PostgresHostMigrations     string `env:"POSTGRES_HOST_MIGRATIONS,required"`
+	PostgresPortMigrations     int    `env:"POSTGRES_PORT_MIGRATIONS,required"`
+	PostgresDBMigrations       string `env:"POSTGRES_DB_MIGRATIONS,required"`
+	PostgresSSLModeMigrations  string `env:"POSTGRES_SSL_MODE_MIGRATIONS,required"`
 }
 
 func (d *DatabaseSettings) GetPostgresWriteDSN() string {
@@ -36,5 +43,16 @@ func (d *DatabaseSettings) GetPostgresReadDSN() string {
 		d.PostgresPasswordRead,
 		d.PostgresDBRead,
 		d.PostgresSSLModeRead,
+	)
+}
+
+func (d *DatabaseSettings) GetPostgresMigrationURL() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		d.PostgresUserMigrations,
+		d.PostgresPasswordMigrations,
+		d.PostgresHostWrite,
+		d.PostgresPortWrite,
+		d.PostgresDBWrite,
+		d.PostgresSSLModeWrite,
 	)
 }
