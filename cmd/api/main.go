@@ -23,6 +23,8 @@ func main() {
 		settings.Project.Debug, settings.Project.Environment,
 	)
 
+	persistance.RunMigrations(settings.Database.GetPostgresMigrationURL())
+
 	log.Println("Initializing database connection...")
 	db, err := persistance.NewConnection(settings.Database.GetPostgresWriteDSN())
 	if err != nil {
