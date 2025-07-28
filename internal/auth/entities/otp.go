@@ -2,7 +2,6 @@ package entities
 
 import "github.com/fraineri/plexo_backend/internal/core/types"
 
-// OTP represents the one-time password entity.
 type OTP struct {
 	ID        string `json:"id"`
 	UserID    string `json:"user_id"`
