@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 
 	"github.com/fraineri/plexo_backend/internal/auth/services"
 	"github.com/fraineri/plexo_backend/internal/core/persistance/uow"
@@ -39,16 +40,46 @@ func NewLoginUser(
 }
 
 func (uc *loginUser) Execute(ctx context.Context, input LoginUserInput) (*LoginUserOutput, error) {
-	var token string
+	// 1. Authenticate user credentials. This happens outside any transaction.
+	user, authErr := uc.userService.Authenticate(ctx, input.Email, input.Password)
 
-	err := uc.uow.Do(ctx, func() error {
-		// 1. Authenticate user
-		user, err := uc.userService.Login(ctx, input.Email, input.Password)
-		if err != nil {
-			return err // Returns specific errors like "invalid credentials" or "account blocked"
+	// 2. Handle failed authentication.
+	if authErr != nil {
+		if errors.Is(authErr, services.ErrInvalidCredentials) && user != nil {
+			var recordFailureBusinessOutcome error
+
+			// This transaction's purpose is to record the failure and MUST commit.
+			txSystemErr := uc.uow.Do(ctx, func() error {
+				recordFailureBusinessOutcome = uc.userService.RecordFailedLogin(ctx, user.ID)
+
+				// Check if the error is NOT a domain error (e.g., DB connection issue).
+				if recordFailureBusinessOutcome != nil && !errors.Is(recordFailureBusinessOutcome, services.ErrAccountLockout) {
+					return recordFailureBusinessOutcome
+				}
+
+				// We return nil to ensure the UnitOfWork COMMITS the transaction.
+				return nil
+			})
+
+			if txSystemErr != nil {
+				return nil, txSystemErr
+			}
+
+			// After the transaction has committed, we check the business outcome.
+			if errors.Is(recordFailureBusinessOutcome, services.ErrAccountLockout) {
+				return nil, services.ErrAccountLockout
+			}
 		}
 
-		// 2. Generate JWT token
+		return nil, authErr
+	}
+
+	// 3. Handle successful authentication.
+	var token string
+	txErr := uc.uow.Do(ctx, func() error {
+		if err := uc.userService.RecordSuccessfulLogin(ctx, user.ID); err != nil {
+			return err
+		}
 		generatedToken, err := uc.jwtService.GenerateToken(user)
 		if err != nil {
 			return err
@@ -57,8 +88,8 @@ func (uc *loginUser) Execute(ctx context.Context, input LoginUserInput) (*LoginU
 		return nil
 	})
 
-	if err != nil {
-		return nil, err
+	if txErr != nil {
+		return nil, txErr
 	}
 
 	return &LoginUserOutput{Token: token}, nil

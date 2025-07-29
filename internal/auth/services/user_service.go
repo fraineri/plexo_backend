@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,7 +13,9 @@ type UserService interface {
 	CheckIfEmailExists(ctx context.Context, email string) (bool, error)
 	CreateUser(ctx context.Context, firstName, lastName, email, hashedPassword string) (*entities.User, error)
 	ActivateUser(ctx context.Context, userID string) error
-	Login(ctx context.Context, email, password string) (*entities.User, error) // New method
+	Authenticate(ctx context.Context, email, password string) (*entities.User, error)
+	RecordSuccessfulLogin(ctx context.Context, userID string) error
+	RecordFailedLogin(ctx context.Context, userID string) error
 }
 
 type userService struct {
@@ -78,25 +79,28 @@ func (s *userService) ActivateUser(ctx context.Context, userID string) error {
 	return nil
 }
 
-func (s *userService) Login(ctx context.Context, email, password string) (*entities.User, error) {
-	// 1. Find user by email
+func (s *userService) Authenticate(ctx context.Context, email, password string) (*entities.User, error) {
 	user, err := s.userRepository.FindByEmail(ctx, email)
-	if err != nil || user == nil {
-		return nil, errors.New("invalid credentials")
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user: %w", err)
 	}
 
-	// 2. Check user status
+	if user == nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	// Check user status
 	if user.Status == "PENDING_VERIFICATION" {
-		return nil, errors.New("account not verified")
+		return nil, ErrAccountNotVerified
 	}
 	if user.Status == "SUSPENDED" {
-		return nil, errors.New("account suspended")
+		return nil, ErrAccountSuspended
 	}
 	if user.Status == "BLOCKED" {
 		if user.BlockedUntil != nil && time.Now().Unix() < *user.BlockedUntil {
-			return nil, fmt.Errorf("account blocked until %s", time.Unix(*user.BlockedUntil, 0).Format(time.RFC1123))
+			return nil, ErrAccountBlocked
 		}
-		// If block expired, unblock the user
+		// If block expired, unblock the user before proceeding
 		user.Status = "ACTIVE"
 		user.BlockedUntil = nil
 		if err := s.userRepository.Update(ctx, user); err != nil {
@@ -104,38 +108,52 @@ func (s *userService) Login(ctx context.Context, email, password string) (*entit
 		}
 	}
 
-	// 3. Check password
 	if !s.hashingService.CheckPasswordHash(password, user.PasswordHash) {
-		// Password incorrect, record failed attempt and check for lockout
-		_ = s.loginAttemptRepository.Create(ctx, &entities.LoginAttempt{UserID: user.ID, IsSuccessful: false})
-		if err := s.handleFailedLogin(ctx, user); err != nil {
-			return nil, err // Return the specific error (e.g., account now blocked)
-		}
-		return nil, errors.New("invalid credentials")
+		return user, ErrInvalidCredentials
 	}
 
-	// 4. Successful login
-	_ = s.loginAttemptRepository.Create(ctx, &entities.LoginAttempt{UserID: user.ID, IsSuccessful: true})
 	return user, nil
 }
 
-func (s *userService) handleFailedLogin(ctx context.Context, user *entities.User) error {
-	attempts, err := s.loginAttemptRepository.FindLastByUser(ctx, user.ID, 5)
+func (s *userService) RecordSuccessfulLogin(ctx context.Context, userID string) error {
+	return s.loginAttemptRepository.Create(ctx, &entities.LoginAttempt{UserID: userID, IsSuccessful: true})
+}
+
+func (s *userService) RecordFailedLogin(ctx context.Context, userID string) error {
+	// 1. Record the failed attempt.
+	err := s.loginAttemptRepository.Create(ctx, &entities.LoginAttempt{UserID: userID, IsSuccessful: false})
+	if err != nil {
+		return fmt.Errorf("failed to record login attempt: %w", err)
+	}
+
+	// 2. Check for account lockout condition.
+	attempts, err := s.loginAttemptRepository.FindLastByUser(ctx, userID, 5)
 	if err != nil {
 		return fmt.Errorf("could not retrieve login attempts: %w", err)
 	}
 
 	if len(attempts) < 5 {
-		return nil // Not enough attempts to trigger a lock
+		return nil // Not enough attempts to trigger a lock.
 	}
 
+	isConsecutiveFailure := true
 	for _, attempt := range attempts {
 		if attempt.IsSuccessful {
-			return nil // A successful login breaks the chain
+			isConsecutiveFailure = false
+			break
 		}
 	}
 
-	// All 5 are failures, block the account
+	if !isConsecutiveFailure {
+		return nil // A successful login broke the chain.
+	}
+
+	// 3. All 5 are consecutive failures, block the account.
+	user, err := s.userRepository.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return fmt.Errorf("failed to find user to lock: %w", err)
+	}
+
 	blockDuration := 15 * time.Minute
 	blockedUntil := time.Now().Add(blockDuration).Unix()
 	user.Status = "BLOCKED"
@@ -145,5 +163,6 @@ func (s *userService) handleFailedLogin(ctx context.Context, user *entities.User
 		return fmt.Errorf("failed to lock user account: %w", err)
 	}
 
-	return fmt.Errorf("account has been blocked for %v due to too many failed login attempts", blockDuration)
+	// Return a specific business error indicating lockout.
+	return ErrAccountLockout
 }
