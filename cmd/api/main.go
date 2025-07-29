@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	appInfoHandlers "github.com/fraineri/plexo_backend/internal/app_info/handlers"
-	authHandlers "github.com/fraineri/plexo_backend/internal/auth/handlers" // Corrected import path
+	authHandlers "github.com/fraineri/plexo_backend/internal/auth/handlers"
 	"github.com/fraineri/plexo_backend/internal/core/persistance"
 	"github.com/fraineri/plexo_backend/internal/core/settings"
 	"github.com/fraineri/plexo_backend/internal/core/types"
