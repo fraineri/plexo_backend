@@ -10,16 +10,55 @@ import (
 	"github.com/fraineri/plexo_backend/internal/auth/services"
 	"github.com/fraineri/plexo_backend/internal/auth/usecases"
 	"github.com/fraineri/plexo_backend/internal/core/persistance/uow"
+	"github.com/fraineri/plexo_backend/internal/core/settings"
 	"github.com/gorilla/mux"
 )
 
-type AuthHandler struct {
-	db *sql.DB
+type authDependencies struct {
+	registerUserUseCase  usecases.RegisterUserUseCase
+	verifyAccountUseCase usecases.VerifyAccountUseCase
+	loginUserUseCase     usecases.LoginUserUseCase
 }
 
-func NewAuthHandler(db *sql.DB) *AuthHandler {
+func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependencies {
+	// The UnitOfWork is created once per request.
+	unitOfWork := uow.NewUnitOfWork(db)
+
+	// Instantiate repositories with the request-scoped UnitOfWork.
+	userRepository := persistance.NewUserRepository(unitOfWork)
+	otpRepository := persistance.NewOtpRepository(unitOfWork)
+	loginAttemptRepository := persistance.NewLoginAttemptRepository(unitOfWork)
+
+	// Instantiate services.
+	hashingService := services.NewHashingService()
+	notificationService := services.NewLogNotificationService() // Replace with a real service in production.
+	authOtpService := services.NewAuthOtpService(otpRepository)
+
+	jwtService := services.NewJWTService(settings.JWT.SecretKey, settings.JWT.SessionTimeMins)
+
+	userService := services.NewUserService(userRepository, loginAttemptRepository, hashingService)
+
+	// Instantiate use cases, injecting the UoW and services.
+	registerUserUseCase := usecases.NewRegisterUser(unitOfWork, userService, authOtpService, hashingService, notificationService)
+	verifyAccountUseCase := usecases.NewVerifyAccount(unitOfWork, userService, authOtpService, userRepository)
+	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService)
+
+	return &authDependencies{
+		registerUserUseCase:  registerUserUseCase,
+		verifyAccountUseCase: verifyAccountUseCase,
+		loginUserUseCase:     loginUserUseCase,
+	}
+}
+
+type AuthHandler struct {
+	db       *sql.DB
+	settings *settings.Settings
+}
+
+func NewAuthHandler(db *sql.DB, settings *settings.Settings) *AuthHandler {
 	return &AuthHandler{
-		db: db,
+		db:       db,
+		settings: settings,
 	}
 }
 
@@ -36,16 +75,7 @@ func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-request instantiation
-	unitOfWork := uow.NewUnitOfWork(h.db)
-	userRepository := persistance.NewUserRepository(unitOfWork)
-	otpRepository := persistance.NewOtpRepository(unitOfWork)
-	loginAttemptRepository := persistance.NewLoginAttemptRepository(unitOfWork)
-	hashingService := services.NewHashingService()
-	notificationService := services.NewLogNotificationService()
-	authOtpService := services.NewAuthOtpService(otpRepository)
-	userService := services.NewUserService(userRepository, loginAttemptRepository, hashingService)
-	registerUserUseCase := usecases.NewRegisterUser(unitOfWork, userService, authOtpService, hashingService, notificationService)
+	deps := newAuthDependencies(h.db, h.settings)
 
 	input := usecases.RegisterUserInput{
 		FirstName: dto.FirstName,
@@ -54,7 +84,7 @@ func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 		Password:  dto.Password,
 	}
 
-	_, err := registerUserUseCase.Execute(r.Context(), input)
+	_, err := deps.registerUserUseCase.Execute(r.Context(), input)
 	if err != nil {
 		log.Printf("Registration error: %v", err)
 		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
@@ -74,22 +104,14 @@ func (h *AuthHandler) verifyAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-request instantiation
-	unitOfWork := uow.NewUnitOfWork(h.db)
-	userRepository := persistance.NewUserRepository(unitOfWork)
-	otpRepository := persistance.NewOtpRepository(unitOfWork)
-	loginAttemptRepository := persistance.NewLoginAttemptRepository(unitOfWork)
-	hashingService := services.NewHashingService()
-	authOtpService := services.NewAuthOtpService(otpRepository)
-	userService := services.NewUserService(userRepository, loginAttemptRepository, hashingService)
-	verifyAccountUseCase := usecases.NewVerifyAccount(unitOfWork, userService, authOtpService, userRepository)
+	deps := newAuthDependencies(h.db, h.settings)
 
 	input := usecases.VerifyAccountInput{
 		Email:   dto.Email,
 		OTPCode: dto.OTPCode,
 	}
 
-	err := verifyAccountUseCase.Execute(r.Context(), input)
+	err := deps.verifyAccountUseCase.Execute(r.Context(), input)
 	if err != nil {
 		log.Printf("Verification error: %v", err)
 		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
@@ -109,22 +131,14 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-request instantiation
-	unitOfWork := uow.NewUnitOfWork(h.db)
-	userRepository := persistance.NewUserRepository(unitOfWork)
-	loginAttemptRepository := persistance.NewLoginAttemptRepository(unitOfWork)
-	hashingService := services.NewHashingService()
-	// IMPORTANT: You should get these from your settings/config in a real app
-	jwtService := services.NewJWTService("your-super-secret-key", 30)
-	userService := services.NewUserService(userRepository, loginAttemptRepository, hashingService)
-	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService)
+	deps := newAuthDependencies(h.db, h.settings)
 
 	input := usecases.LoginUserInput{
 		Email:    dto.Email,
 		Password: dto.Password,
 	}
 
-	result, err := loginUserUseCase.Execute(r.Context(), input)
+	result, err := deps.loginUserUseCase.Execute(r.Context(), input)
 	if err != nil {
 		log.Printf("Login error: %v", err)
 		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusUnauthorized) // 401 for login failures

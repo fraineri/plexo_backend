@@ -39,11 +39,11 @@ func main() {
 
 	// --- Initialize Handlers ---
 	appInfoHandler := appInfoHandlers.NewAppInfoHandler(db)
-	authHandler := authHandlers.NewAuthHandler(db)
+	authHandler := authHandlers.NewAuthHandler(db, settings)
 
 	routers := []types.Router{
 		appInfoHandler,
-		authHandler, // Add the new auth handler
+		authHandler,
 	}
 
 	mainRouter := mux.NewRouter()
