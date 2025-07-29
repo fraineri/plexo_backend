@@ -15,9 +15,10 @@ import (
 )
 
 type authDependencies struct {
-	registerUserUseCase  usecases.RegisterUserUseCase
-	verifyAccountUseCase usecases.VerifyAccountUseCase
-	loginUserUseCase     usecases.LoginUserUseCase
+	registerUserUseCase          usecases.RegisterUserUseCase
+	verifyAccountUseCase         usecases.VerifyAccountUseCase
+	resendVerificationOtpUseCase usecases.ResendVerificationOtpUseCase
+	loginUserUseCase             usecases.LoginUserUseCase
 }
 
 func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependencies {
@@ -39,12 +40,14 @@ func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependenc
 	// Instantiate use cases, injecting the UoW and services.
 	registerUserUseCase := usecases.NewRegisterUser(unitOfWork, userService, authOtpService, hashingService, notificationService)
 	verifyAccountUseCase := usecases.NewVerifyAccount(unitOfWork, userService, authOtpService, userRepository)
+	resendVerificationOtpUseCase := usecases.NewResendVerificationOtp(unitOfWork, userRepository, authOtpService, notificationService)
 	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService)
 
 	return &authDependencies{
-		registerUserUseCase:  registerUserUseCase,
-		verifyAccountUseCase: verifyAccountUseCase,
-		loginUserUseCase:     loginUserUseCase,
+		registerUserUseCase:          registerUserUseCase,
+		verifyAccountUseCase:         verifyAccountUseCase,
+		resendVerificationOtpUseCase: resendVerificationOtpUseCase,
+		loginUserUseCase:             loginUserUseCase,
 	}
 }
 
@@ -63,6 +66,7 @@ func NewAuthHandler(db *sql.DB, settings *settings.Settings) *AuthHandler {
 func (h *AuthHandler) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/auth/register", h.registerUser).Methods("POST")
 	router.HandleFunc("/auth/verify-account", h.verifyAccount).Methods("POST")
+	router.HandleFunc("/auth/resend-verification-otp", h.resendVerificationOtp).Methods("POST") // <-- Add this
 	router.HandleFunc("/auth/login", h.login).Methods("POST")
 }
 
@@ -118,6 +122,31 @@ func (h *AuthHandler) verifyAccount(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{"message": "Account verified successfully."}); err != nil {
+		log.Printf("Encoding response error: %v", err)
+	}
+}
+
+func (h *AuthHandler) resendVerificationOtp(w http.ResponseWriter, r *http.Request) {
+	var dto ResendVerificationOtpRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+
+	input := usecases.ResendVerificationOtpInput{
+		Email: dto.Email,
+	}
+
+	if err := deps.resendVerificationOtpUseCase.Execute(r.Context(), input); err != nil {
+		// Even if an error occurs (e.g., rate limit), we return a generic success message
+		// to prevent leaking information. The error should be logged for monitoring.
+		log.Printf("Resend OTP error: %v", err)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]string{"message": "If an account with that email exists, a new verification code has been sent."}); err != nil {
 		log.Printf("Encoding response error: %v", err)
 	}
 }

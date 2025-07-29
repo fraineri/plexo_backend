@@ -8,5 +8,5 @@ var (
 	ErrAccountSuspended   = errors.New("account suspended")
 	ErrAccountBlocked     = errors.New("account blocked")
 	ErrAccountLockout     = errors.New("account has been blocked due to too many failed login attempts")
-	ErrRateLimitExceeded  = errors.New("you have requested too many OTPs, please try again later") // <-- Add this line
+	ErrRateLimitExceeded  = errors.New("you have requested too many OTPs, please try again later")
 )

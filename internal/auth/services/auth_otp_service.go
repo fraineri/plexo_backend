@@ -15,7 +15,8 @@ import (
 
 type AuthOtpService interface {
 	CreateVerificationOtp(ctx context.Context, userID string) (string, error)
-	VerifyOtp(ctx context.Context, userID, purpose, code string) error // New method
+	ResendVerificationOtp(ctx context.Context, userID string) (string, error)
+	VerifyOtp(ctx context.Context, userID, purpose, code string) error
 }
 
 type authOtpService struct {
@@ -31,35 +32,11 @@ func NewAuthOtpService(otpRepository persistance.OtpRepository, settings setting
 }
 
 func (s *authOtpService) CreateVerificationOtp(ctx context.Context, userID string) (string, error) {
-	since := time.Now().Add(-time.Duration(s.settings.RateLimitMinutes) * time.Minute).Unix()
 	purpose := "ACCOUNT_VERIFICATION"
-
-	count, err := s.otpRepository.CountRecentByUserID(ctx, userID, purpose, since)
-	if err != nil {
-		return "", fmt.Errorf("failed to count recent otps: %w", err)
+	if err := s.checkRateLimit(ctx, userID, purpose); err != nil {
+		return "", err
 	}
-
-	if count >= s.settings.RateLimitCount {
-		return "", ErrRateLimitExceeded
-	}
-
-	otpCode, err := s.generateCode()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate OTP code: %w", err)
-	}
-
-	otp := &entities.OTP{
-		UserID:    userID,
-		Code:      otpCode,
-		Purpose:   purpose,
-		ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
-	}
-
-	if err := s.otpRepository.Create(ctx, otp); err != nil {
-		return "", fmt.Errorf("failed to create OTP record: %w", err)
-	}
-
-	return otp.Code, nil
+	return s.generateAndSaveOtp(ctx, userID, purpose)
 }
 
 func (s *authOtpService) VerifyOtp(ctx context.Context, userID, purpose, code string) error {
@@ -94,6 +71,56 @@ func (s *authOtpService) VerifyOtp(ctx context.Context, userID, purpose, code st
 	}
 
 	return nil
+}
+
+func (s *authOtpService) ResendVerificationOtp(ctx context.Context, userID string) (string, error) {
+	purpose := "ACCOUNT_VERIFICATION"
+
+	// Step 1: Check rate limit
+	if err := s.checkRateLimit(ctx, userID, purpose); err != nil {
+		return "", err
+	}
+
+	// Step 2: Invalidate all previous OTPs for this purpose
+	if err := s.otpRepository.InvalidateAllUnused(ctx, userID, purpose); err != nil {
+		return "", fmt.Errorf("failed to invalidate old otps: %w", err)
+	}
+
+	// Step 3: Generate and save a new OTP
+	return s.generateAndSaveOtp(ctx, userID, purpose)
+}
+
+func (s *authOtpService) checkRateLimit(ctx context.Context, userID, purpose string) error {
+	since := time.Now().Add(-time.Duration(s.settings.RateLimitMinutes) * time.Minute).Unix()
+	count, err := s.otpRepository.CountRecentByUserID(ctx, userID, purpose, since)
+	if err != nil {
+		return fmt.Errorf("failed to count recent otps: %w", err)
+	}
+
+	if count >= s.settings.RateLimitCount {
+		return ErrRateLimitExceeded
+	}
+	return nil
+}
+
+func (s *authOtpService) generateAndSaveOtp(ctx context.Context, userID, purpose string) (string, error) {
+	otpCode, err := s.generateCode()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate OTP code: %w", err)
+	}
+
+	otp := &entities.OTP{
+		UserID:    userID,
+		Code:      otpCode,
+		Purpose:   purpose,
+		ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
+	}
+
+	if err := s.otpRepository.Create(ctx, otp); err != nil {
+		return "", fmt.Errorf("failed to create OTP record: %w", err)
+	}
+
+	return otp.Code, nil
 }
 
 func (s *authOtpService) generateCode() (string, error) {

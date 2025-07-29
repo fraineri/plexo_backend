@@ -94,3 +94,15 @@ func (r *otpRepo) Update(ctx context.Context, otp *entities.OTP) error {
 	_, err := executor.ExecContext(ctx, query, otp.UsedAt, otp.ID)
 	return err
 }
+
+func (r *otpRepo) InvalidateAllUnused(ctx context.Context, userID, purpose string) error {
+	executor := r.uow.GetExecutor()
+	query := `
+		UPDATE otps
+		SET expires_at = $1
+		WHERE user_id = $2 AND purpose = $3 AND used_at IS NULL
+	`
+	now := time.Now().Unix()
+	_, err := executor.ExecContext(ctx, query, now, userID, purpose)
+	return err
+}

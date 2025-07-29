@@ -18,6 +18,7 @@ type OtpRepository interface {
 	FindLatestByUserID(ctx context.Context, userID, purpose string) (*entities.OTP, error)
 	CountRecentByUserID(ctx context.Context, userID, purpose string, since int64) (int, error)
 	Update(ctx context.Context, otp *entities.OTP) error
+	InvalidateAllUnused(ctx context.Context, userID, purpose string) error
 }
 
 type LoginAttemptRepository interface {

@@ -12,6 +12,9 @@ type VerifyAccountRequestDTO struct {
 	OTPCode string `json:"otp_code"`
 }
 
+type ResendVerificationOtpRequestDTO struct {
+	Email string `json:"email"`
+}
 type LoginRequestDTO struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
