@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	appInfoHandlers "github.com/fraineri/plexo_backend/internal/app_info/handlers"
+	authHandlers "github.com/fraineri/plexo_backend/internal/auth/handlers" // Corrected import path
 	"github.com/fraineri/plexo_backend/internal/core/persistance"
-
 	"github.com/fraineri/plexo_backend/internal/core/settings"
 	"github.com/fraineri/plexo_backend/internal/core/types"
 	"github.com/gorilla/mux"
@@ -37,14 +37,21 @@ func main() {
 	}()
 	log.Println("Database connection initialized successfully.")
 
+	// --- Initialize Handlers ---
+	appInfoHandler := appInfoHandlers.NewAppInfoHandler(db)
+	authHandler := authHandlers.NewAuthHandler(db)
+
 	routers := []types.Router{
-		appInfoHandlers.NewAppInfoHandler(db),
+		appInfoHandler,
+		authHandler, // Add the new auth handler
 	}
 
 	mainRouter := mux.NewRouter()
+	apiRouter := mainRouter.PathPrefix("/api/v1").Subrouter()
+
 	log.Println("Registering routes...")
 	for _, router := range routers {
-		router.RegisterRoutes(mainRouter)
+		router.RegisterRoutes(apiRouter)
 	}
 	log.Println("Routes registered successfully.")
 
