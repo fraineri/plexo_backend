@@ -10,6 +10,7 @@ import (
 
 	"github.com/fraineri/plexo_backend/internal/auth/entities"
 	"github.com/fraineri/plexo_backend/internal/auth/persistance"
+	"github.com/fraineri/plexo_backend/internal/core/settings"
 )
 
 type AuthOtpService interface {
@@ -19,15 +20,29 @@ type AuthOtpService interface {
 
 type authOtpService struct {
 	otpRepository persistance.OtpRepository
+	settings      settings.OTPSettings
 }
 
-func NewAuthOtpService(otpRepository persistance.OtpRepository) AuthOtpService {
+func NewAuthOtpService(otpRepository persistance.OtpRepository, settings settings.OTPSettings) AuthOtpService {
 	return &authOtpService{
 		otpRepository: otpRepository,
+		settings:      settings,
 	}
 }
 
 func (s *authOtpService) CreateVerificationOtp(ctx context.Context, userID string) (string, error) {
+	since := time.Now().Add(-time.Duration(s.settings.RateLimitMinutes) * time.Minute).Unix()
+	purpose := "ACCOUNT_VERIFICATION"
+
+	count, err := s.otpRepository.CountRecentByUserID(ctx, userID, purpose, since)
+	if err != nil {
+		return "", fmt.Errorf("failed to count recent otps: %w", err)
+	}
+
+	if count >= s.settings.RateLimitCount {
+		return "", ErrRateLimitExceeded
+	}
+
 	otpCode, err := s.generateCode()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate OTP code: %w", err)
@@ -36,7 +51,7 @@ func (s *authOtpService) CreateVerificationOtp(ctx context.Context, userID strin
 	otp := &entities.OTP{
 		UserID:    userID,
 		Code:      otpCode,
-		Purpose:   "ACCOUNT_VERIFICATION",
+		Purpose:   purpose,
 		ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
 	}
 

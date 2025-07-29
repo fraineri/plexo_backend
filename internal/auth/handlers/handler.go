@@ -32,10 +32,8 @@ func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependenc
 	// Instantiate services.
 	hashingService := services.NewHashingService()
 	notificationService := services.NewLogNotificationService() // Replace with a real service in production.
-	authOtpService := services.NewAuthOtpService(otpRepository)
-
+	authOtpService := services.NewAuthOtpService(otpRepository, settings.OTP)
 	jwtService := services.NewJWTService(settings.JWT.SecretKey, settings.JWT.SessionTimeMins)
-
 	userService := services.NewUserService(userRepository, loginAttemptRepository, hashingService)
 
 	// Instantiate use cases, injecting the UoW and services.

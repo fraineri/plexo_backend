@@ -18,6 +18,7 @@ type Settings struct {
 	Project  ProjectSettings
 	AppInfo  appInfoSettings
 	JWT      JWTSettings
+	OTP      OTPSettings
 }
 
 func LoadConfig() (*Settings, error) {
