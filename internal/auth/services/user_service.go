@@ -14,6 +14,7 @@ type UserService interface {
 	CreateUser(ctx context.Context, firstName, lastName, email, hashedPassword string) (*entities.User, error)
 	ActivateUser(ctx context.Context, userID string) error
 	Authenticate(ctx context.Context, email, password string) (*entities.User, error)
+	UpdatePassword(ctx context.Context, userID, newPassword string) error
 	RecordSuccessfulLogin(ctx context.Context, userID string) error
 	RecordFailedLogin(ctx context.Context, userID string) error
 }
@@ -113,6 +114,33 @@ func (s *userService) Authenticate(ctx context.Context, email, password string) 
 	}
 
 	return user, nil
+}
+
+func (s *userService) UpdatePassword(ctx context.Context, userID, newPassword string) error {
+	user, err := s.userRepository.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("could not find user to update password: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user with id %s not found", userID)
+	}
+
+	hashedPassword, err := s.hashingService.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash new password: %w", err)
+	}
+	user.PasswordHash = hashedPassword
+
+	// A successful password reset should unblock the account.
+	if user.Status == "BLOCKED" {
+		user.Status = "ACTIVE"
+		user.BlockedUntil = nil
+	}
+
+	if err := s.userRepository.Update(ctx, user); err != nil {
+		return fmt.Errorf("failed to update user password: %w", err)
+	}
+	return nil
 }
 
 func (s *userService) RecordSuccessfulLogin(ctx context.Context, userID string) error {

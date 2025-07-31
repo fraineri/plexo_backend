@@ -18,6 +18,8 @@ type authDependencies struct {
 	registerUserUseCase          usecases.RegisterUserUseCase
 	verifyAccountUseCase         usecases.VerifyAccountUseCase
 	resendVerificationOtpUseCase usecases.ResendVerificationOtpUseCase
+	requestPasswordResetUseCase  usecases.RequestPasswordResetUseCase
+	resetPasswordUseCase         usecases.ResetPasswordUseCase
 	loginUserUseCase             usecases.LoginUserUseCase
 }
 
@@ -41,12 +43,16 @@ func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependenc
 	registerUserUseCase := usecases.NewRegisterUser(unitOfWork, userService, authOtpService, hashingService, notificationService)
 	verifyAccountUseCase := usecases.NewVerifyAccount(unitOfWork, userService, authOtpService, userRepository)
 	resendVerificationOtpUseCase := usecases.NewResendVerificationOtp(unitOfWork, userRepository, authOtpService, notificationService)
+	requestPasswordResetUseCase := usecases.NewRequestPasswordReset(unitOfWork, userRepository, authOtpService, notificationService)
+	resetPasswordUseCase := usecases.NewResetPassword(unitOfWork, userService, authOtpService, userRepository)
 	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService)
 
 	return &authDependencies{
 		registerUserUseCase:          registerUserUseCase,
 		verifyAccountUseCase:         verifyAccountUseCase,
 		resendVerificationOtpUseCase: resendVerificationOtpUseCase,
+		requestPasswordResetUseCase:  requestPasswordResetUseCase,
+		resetPasswordUseCase:         resetPasswordUseCase,
 		loginUserUseCase:             loginUserUseCase,
 	}
 }
@@ -66,7 +72,9 @@ func NewAuthHandler(db *sql.DB, settings *settings.Settings) *AuthHandler {
 func (h *AuthHandler) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/auth/register", h.registerUser).Methods("POST")
 	router.HandleFunc("/auth/verify-account", h.verifyAccount).Methods("POST")
-	router.HandleFunc("/auth/resend-verification-otp", h.resendVerificationOtp).Methods("POST") // <-- Add this
+	router.HandleFunc("/auth/resend-verification-otp", h.resendVerificationOtp).Methods("POST")
+	router.HandleFunc("/auth/request-password-reset", h.requestPasswordReset).Methods("POST")
+	router.HandleFunc("/auth/reset-password", h.resetPassword).Methods("POST")
 	router.HandleFunc("/auth/login", h.login).Methods("POST")
 }
 
@@ -147,6 +155,55 @@ func (h *AuthHandler) resendVerificationOtp(w http.ResponseWriter, r *http.Reque
 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{"message": "If an account with that email exists, a new verification code has been sent."}); err != nil {
+		log.Printf("Encoding response error: %v", err)
+	}
+}
+
+func (h *AuthHandler) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var dto RequestPasswordResetDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+	input := usecases.RequestPasswordResetInput{Email: dto.Email}
+
+	if err := deps.requestPasswordResetUseCase.Execute(r.Context(), input); err != nil {
+		log.Printf("Request password reset error: %v", err)
+		// Return a generic error to the client, but log the specific one.
+		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]string{"message": "If an account with that email exists, a password reset code has been sent."}); err != nil {
+		log.Printf("Encoding response error: %v", err)
+	}
+}
+
+func (h *AuthHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
+	var dto ResetPasswordRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+	input := usecases.ResetPasswordInput{
+		Email:       dto.Email,
+		OTPCode:     dto.OTPCode,
+		NewPassword: dto.NewPassword,
+	}
+
+	if err := deps.resetPasswordUseCase.Execute(r.Context(), input); err != nil {
+		log.Printf("Reset password error: %v", err)
+		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]string{"message": "Password has been reset successfully."}); err != nil {
 		log.Printf("Encoding response error: %v", err)
 	}
 }

@@ -16,6 +16,7 @@ import (
 type AuthOtpService interface {
 	CreateVerificationOtp(ctx context.Context, userID string) (string, error)
 	ResendVerificationOtp(ctx context.Context, userID string) (string, error)
+	CreatePasswordResetOtp(ctx context.Context, userID string) (string, error)
 	VerifyOtp(ctx context.Context, userID, purpose, code string) error
 }
 
@@ -36,6 +37,40 @@ func (s *authOtpService) CreateVerificationOtp(ctx context.Context, userID strin
 	if err := s.checkRateLimit(ctx, userID, purpose); err != nil {
 		return "", err
 	}
+	return s.generateAndSaveOtp(ctx, userID, purpose)
+}
+
+func (s *authOtpService) ResendVerificationOtp(ctx context.Context, userID string) (string, error) {
+	purpose := "ACCOUNT_VERIFICATION"
+
+	// Step 1: Check rate limit
+	if err := s.checkRateLimit(ctx, userID, purpose); err != nil {
+		return "", err
+	}
+
+	// Step 2: Invalidate all previous OTPs for this purpose
+	if err := s.otpRepository.InvalidateAllUnused(ctx, userID, purpose); err != nil {
+		return "", fmt.Errorf("failed to invalidate old otps: %w", err)
+	}
+
+	// Step 3: Generate and save a new OTP
+	return s.generateAndSaveOtp(ctx, userID, purpose)
+}
+
+func (s *authOtpService) CreatePasswordResetOtp(ctx context.Context, userID string) (string, error) {
+	purpose := "PASSWORD_RESET"
+
+	// Step 1: Check rate limit for this purpose
+	if err := s.checkRateLimit(ctx, userID, purpose); err != nil {
+		return "", err
+	}
+
+	// Step 2: Invalidate all previous OTPs for this purpose
+	if err := s.otpRepository.InvalidateAllUnused(ctx, userID, purpose); err != nil {
+		return "", fmt.Errorf("failed to invalidate old password reset otps: %w", err)
+	}
+
+	// Step 3: Generate and save a new OTP
 	return s.generateAndSaveOtp(ctx, userID, purpose)
 }
 
@@ -71,23 +106,6 @@ func (s *authOtpService) VerifyOtp(ctx context.Context, userID, purpose, code st
 	}
 
 	return nil
-}
-
-func (s *authOtpService) ResendVerificationOtp(ctx context.Context, userID string) (string, error) {
-	purpose := "ACCOUNT_VERIFICATION"
-
-	// Step 1: Check rate limit
-	if err := s.checkRateLimit(ctx, userID, purpose); err != nil {
-		return "", err
-	}
-
-	// Step 2: Invalidate all previous OTPs for this purpose
-	if err := s.otpRepository.InvalidateAllUnused(ctx, userID, purpose); err != nil {
-		return "", fmt.Errorf("failed to invalidate old otps: %w", err)
-	}
-
-	// Step 3: Generate and save a new OTP
-	return s.generateAndSaveOtp(ctx, userID, purpose)
 }
 
 func (s *authOtpService) checkRateLimit(ctx context.Context, userID, purpose string) error {
