@@ -75,37 +75,37 @@ func (s *authOtpService) CreatePasswordResetOtp(ctx context.Context, userID stri
 }
 
 func (s *authOtpService) VerifyOtp(ctx context.Context, userID, purpose, code string) error {
+	// Step 1: Find the latest OTP for the user and purpose.
 	otp, err := s.otpRepository.FindLatestByUserID(ctx, userID, purpose)
 	if err != nil {
-		return fmt.Errorf("error finding otp - %w", err)
+		return fmt.Errorf("error finding otp: %w", err)
 	}
 	if otp == nil {
-		return errors.New("invalid OTP - not found")
+		return errors.New("invalid OTP") // Generic error to prevent leaking info
 	}
 
-	// Check 1: Code must match
-	if otp.Code != code {
-		return errors.New("invalid OTP - code mismatch")
-	}
-
-	// Check 2: OTP must not be used
+	// Step 2: Perform initial checks.
 	if otp.UsedAt != nil {
-		return errors.New("invalid OTP - already used")
+		return errors.New("invalid OTP: already used")
 	}
-
-	// Check 3: OTP must not be expired
 	if time.Now().Unix() > otp.ExpiresAt {
-		return errors.New("invalid OTP - expired")
+		return errors.New("invalid OTP: expired")
 	}
 
-	// Mark OTP as used
+	// Step 3: Invalidate the OTP immediately before checking the code.
 	now := time.Now().Unix()
 	otp.UsedAt = &now
 	if err := s.otpRepository.Update(ctx, otp); err != nil {
 		return fmt.Errorf("failed to mark OTP as used: %w", err)
 	}
 
+	// Step 4: Check if the code matches.
+	if otp.Code != code {
+		return errors.New("invalid OTP: code mismatch")
+	}
+
 	return nil
+
 }
 
 func (s *authOtpService) checkRateLimit(ctx context.Context, userID, purpose string) error {
