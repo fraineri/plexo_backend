@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS user_roles (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    assigned_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+    PRIMARY KEY (user_id, role_id)
+);
