@@ -36,8 +36,10 @@ type PermissionRepository interface {
 
 type RolePermissionRepository interface {
 	Create(ctx context.Context, rolePermission *entities.RolePermission) error
+	FindPermissionsByRoleIDs(ctx context.Context, roleIDs []string) ([]*entities.Permission, error)
 }
 
 type UserRoleRepository interface {
 	Create(ctx context.Context, userRole *entities.UserRole) error
+	FindByUserID(ctx context.Context, userID string) ([]*entities.UserRole, error)
 }
