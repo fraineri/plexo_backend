@@ -25,3 +25,19 @@ type LoginAttemptRepository interface {
 	Create(ctx context.Context, attempt *entities.LoginAttempt) error
 	FindLastByUser(ctx context.Context, userID string, limit int) ([]*entities.LoginAttempt, error)
 }
+
+type RoleRepository interface {
+	Create(ctx context.Context, role *entities.Role) error
+}
+
+type PermissionRepository interface {
+	Create(ctx context.Context, permission *entities.Permission) error
+}
+
+type RolePermissionRepository interface {
+	Create(ctx context.Context, rolePermission *entities.RolePermission) error
+}
+
+type UserRoleRepository interface {
+	Create(ctx context.Context, userRole *entities.UserRole) error
+}
