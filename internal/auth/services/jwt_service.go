@@ -9,7 +9,7 @@ import (
 )
 
 type JWTService interface {
-	GenerateToken(user *entities.User) (string, error)
+	GenerateToken(user *entities.User, roles []string) (string, error)
 }
 
 type jwtService struct {
@@ -24,14 +24,11 @@ func NewJWTService(secretKey string, session_time int) JWTService {
 	}
 }
 
-func (s *jwtService) GenerateToken(user *entities.User) (string, error) {
-	// @TODO: Determine user role dynamically
-	role := "DOCTOR"
-
+func (s *jwtService) GenerateToken(user *entities.User, roles []string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":   user.ID,
 		"email": user.Email,
-		"role":  role,
+		"roles": roles,
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Minute * time.Duration(s.session_time)).Unix(),
 	}

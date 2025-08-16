@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/fraineri/plexo_backend/internal/auth/persistance"
 	"github.com/fraineri/plexo_backend/internal/auth/services"
 	"github.com/fraineri/plexo_backend/internal/core/persistance/uow"
 )
@@ -22,20 +23,23 @@ type LoginUserUseCase interface {
 }
 
 type loginUser struct {
-	uow         uow.UnitOfWork
-	userService services.UserService
-	jwtService  services.JWTService
+	uow                uow.UnitOfWork
+	userService        services.UserService
+	jwtService         services.JWTService
+	userRoleRepository persistance.UserRoleRepository
 }
 
 func NewLoginUser(
 	uow uow.UnitOfWork,
 	userService services.UserService,
 	jwtService services.JWTService,
+	userRoleRepository persistance.UserRoleRepository,
 ) LoginUserUseCase {
 	return &loginUser{
-		uow:         uow,
-		userService: userService,
-		jwtService:  jwtService,
+		uow:                uow,
+		userService:        userService,
+		jwtService:         jwtService,
+		userRoleRepository: userRoleRepository,
 	}
 }
 
@@ -80,7 +84,19 @@ func (uc *loginUser) Execute(ctx context.Context, input LoginUserInput) (*LoginU
 		if err := uc.userService.RecordSuccessfulLogin(ctx, user.ID); err != nil {
 			return err
 		}
-		generatedToken, err := uc.jwtService.GenerateToken(user)
+
+		// Fetch user roles
+		userRoles, err := uc.userRoleRepository.FindByUserID(ctx, user.ID)
+		if err != nil {
+			return err
+		}
+
+		var roleIDs []string
+		for _, ur := range userRoles {
+			roleIDs = append(roleIDs, ur.RoleID)
+		}
+
+		generatedToken, err := uc.jwtService.GenerateToken(user, roleIDs)
 		if err != nil {
 			return err
 		}

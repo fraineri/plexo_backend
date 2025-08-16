@@ -53,7 +53,7 @@ func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependenc
 	resendVerificationOtpUseCase := usecases.NewResendVerificationOtp(unitOfWork, userRepository, authOtpService, notificationService)
 	requestPasswordResetUseCase := usecases.NewRequestPasswordReset(unitOfWork, userRepository, authOtpService, notificationService)
 	resetPasswordUseCase := usecases.NewResetPassword(unitOfWork, userService, authOtpService, userRepository)
-	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService)
+	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService, userRoleRepository)
 	createRoleUseCase := usecases.NewCreateRole(unitOfWork, roleRepository)
 	createPermissionUseCase := usecases.NewCreatePermission(unitOfWork, permissionRepository)
 	assignPermissionToRoleUseCase := usecases.NewAssignPermissionToRole(unitOfWork, rolePermissionRepository)

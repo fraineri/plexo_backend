@@ -2,14 +2,10 @@ package main
 
 import (
 	"log"
-	"net/http"
 
-	appInfoHandlers "github.com/fraineri/plexo_backend/internal/app_info/handlers"
-	authHandlers "github.com/fraineri/plexo_backend/internal/auth/handlers"
 	"github.com/fraineri/plexo_backend/internal/core/persistance"
 	"github.com/fraineri/plexo_backend/internal/core/settings"
-	"github.com/fraineri/plexo_backend/internal/core/types"
-	"github.com/gorilla/mux"
+	"github.com/fraineri/plexo_backend/internal/server"
 )
 
 func main() {
@@ -37,24 +33,7 @@ func main() {
 	}()
 	log.Println("Database connection initialized successfully.")
 
-	// --- Initialize Handlers ---
-	appInfoHandler := appInfoHandlers.NewAppInfoHandler(db)
-	authHandler := authHandlers.NewAuthHandler(db, settings)
-
-	routers := []types.Router{
-		appInfoHandler,
-		authHandler,
-	}
-
-	mainRouter := mux.NewRouter()
-	apiRouter := mainRouter.PathPrefix("/api/v1").Subrouter()
-
-	log.Println("Registering routes...")
-	for _, router := range routers {
-		router.RegisterRoutes(apiRouter)
-	}
-	log.Println("Routes registered successfully.")
-
-	log.Println("Starting server on :8080")
-	log.Fatal(http.ListenAndServe(":8080", mainRouter))
+	// Create and start the server
+	srv := server.NewServer(db, settings)
+	srv.Start(":8080")
 }
