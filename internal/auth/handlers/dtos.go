@@ -38,3 +38,24 @@ type LoginResponseDTO struct {
 type ErrorResponseDTO struct {
 	Message string `json:"message"`
 }
+
+type CreateRoleRequestDTO struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type CreatePermissionRequestDTO struct {
+	Action      string `json:"action"`
+	Description string `json:"description"`
+}
+
+type AssignPermissionToRoleRequestDTO struct {
+	RoleID       string `json:"role_id"`
+	PermissionID string `json:"permission_id"`
+	Status       string `json:"status"`
+}
+
+type AssignRoleToUserRequestDTO struct {
+	UserID string `json:"user_id"`
+	RoleID string `json:"role_id"`
+}

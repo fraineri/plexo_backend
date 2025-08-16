@@ -15,12 +15,16 @@ import (
 )
 
 type authDependencies struct {
-	registerUserUseCase          usecases.RegisterUserUseCase
-	verifyAccountUseCase         usecases.VerifyAccountUseCase
-	resendVerificationOtpUseCase usecases.ResendVerificationOtpUseCase
-	requestPasswordResetUseCase  usecases.RequestPasswordResetUseCase
-	resetPasswordUseCase         usecases.ResetPasswordUseCase
-	loginUserUseCase             usecases.LoginUserUseCase
+	registerUserUseCase           usecases.RegisterUserUseCase
+	verifyAccountUseCase          usecases.VerifyAccountUseCase
+	resendVerificationOtpUseCase  usecases.ResendVerificationOtpUseCase
+	requestPasswordResetUseCase   usecases.RequestPasswordResetUseCase
+	resetPasswordUseCase          usecases.ResetPasswordUseCase
+	loginUserUseCase              usecases.LoginUserUseCase
+	createRoleUseCase             usecases.CreateRoleUseCase
+	createPermissionUseCase       usecases.CreatePermissionUseCase
+	assignPermissionToRoleUseCase usecases.AssignPermissionToRoleUseCase
+	assignRoleToUserUseCase       usecases.AssignRoleToUserUseCase
 }
 
 func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependencies {
@@ -31,6 +35,10 @@ func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependenc
 	userRepository := persistance.NewUserRepository(unitOfWork)
 	otpRepository := persistance.NewOtpRepository(unitOfWork)
 	loginAttemptRepository := persistance.NewLoginAttemptRepository(unitOfWork)
+	roleRepository := persistance.NewRoleRepository(unitOfWork)
+	permissionRepository := persistance.NewPermissionRepository(unitOfWork)
+	rolePermissionRepository := persistance.NewRolePermissionRepository(unitOfWork)
+	userRoleRepository := persistance.NewUserRoleRepository(unitOfWork)
 
 	// Instantiate services.
 	hashingService := services.NewHashingService()
@@ -46,14 +54,22 @@ func newAuthDependencies(db *sql.DB, settings *settings.Settings) *authDependenc
 	requestPasswordResetUseCase := usecases.NewRequestPasswordReset(unitOfWork, userRepository, authOtpService, notificationService)
 	resetPasswordUseCase := usecases.NewResetPassword(unitOfWork, userService, authOtpService, userRepository)
 	loginUserUseCase := usecases.NewLoginUser(unitOfWork, userService, jwtService)
+	createRoleUseCase := usecases.NewCreateRole(unitOfWork, roleRepository)
+	createPermissionUseCase := usecases.NewCreatePermission(unitOfWork, permissionRepository)
+	assignPermissionToRoleUseCase := usecases.NewAssignPermissionToRole(unitOfWork, rolePermissionRepository)
+	assignRoleToUserUseCase := usecases.NewAssignRoleToUser(unitOfWork, userRoleRepository)
 
 	return &authDependencies{
-		registerUserUseCase:          registerUserUseCase,
-		verifyAccountUseCase:         verifyAccountUseCase,
-		resendVerificationOtpUseCase: resendVerificationOtpUseCase,
-		requestPasswordResetUseCase:  requestPasswordResetUseCase,
-		resetPasswordUseCase:         resetPasswordUseCase,
-		loginUserUseCase:             loginUserUseCase,
+		registerUserUseCase:           registerUserUseCase,
+		verifyAccountUseCase:          verifyAccountUseCase,
+		resendVerificationOtpUseCase:  resendVerificationOtpUseCase,
+		requestPasswordResetUseCase:   requestPasswordResetUseCase,
+		resetPasswordUseCase:          resetPasswordUseCase,
+		loginUserUseCase:              loginUserUseCase,
+		createRoleUseCase:             createRoleUseCase,
+		createPermissionUseCase:       createPermissionUseCase,
+		assignPermissionToRoleUseCase: assignPermissionToRoleUseCase,
+		assignRoleToUserUseCase:       assignRoleToUserUseCase,
 	}
 }
 
@@ -76,6 +92,11 @@ func (h *AuthHandler) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/auth/request-password-reset", h.requestPasswordReset).Methods("POST")
 	router.HandleFunc("/auth/reset-password", h.resetPassword).Methods("POST")
 	router.HandleFunc("/auth/login", h.login).Methods("POST")
+	router.HandleFunc("/auth/roles", h.createRole).Methods("POST")
+	router.HandleFunc("/auth/permissions", h.createPermission).Methods("POST")
+	router.HandleFunc("/auth/roles/permissions", h.assignPermissionToRole).Methods("POST")
+	router.HandleFunc("/auth/users/roles", h.assignRoleToUser).Methods("POST")
+
 }
 
 func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
@@ -233,4 +254,97 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(LoginResponseDTO{Token: result.Token}); err != nil {
 		log.Printf("Encoding response error: %v", err)
 	}
+}
+
+func (h *AuthHandler) createRole(w http.ResponseWriter, r *http.Request) {
+	var dto CreateRoleRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+	input := usecases.CreateRoleInput{
+		Name:        dto.Name,
+		Description: dto.Description,
+	}
+
+	_, err := deps.createRoleUseCase.Execute(r.Context(), input)
+	if err != nil {
+		log.Printf("Create role error: %v", err)
+		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *AuthHandler) createPermission(w http.ResponseWriter, r *http.Request) {
+	var dto CreatePermissionRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+	input := usecases.CreatePermissionInput{
+		Action:      dto.Action,
+		Description: dto.Description,
+	}
+
+	_, err := deps.createPermissionUseCase.Execute(r.Context(), input)
+	if err != nil {
+		log.Printf("Create permission error: %v", err)
+		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *AuthHandler) assignPermissionToRole(w http.ResponseWriter, r *http.Request) {
+	var dto AssignPermissionToRoleRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+	input := usecases.AssignPermissionToRoleInput{
+		RoleID:       dto.RoleID,
+		PermissionID: dto.PermissionID,
+		Status:       dto.Status,
+	}
+
+	err := deps.assignPermissionToRoleUseCase.Execute(r.Context(), input)
+	if err != nil {
+		log.Printf("Assign permission to role error: %v", err)
+		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *AuthHandler) assignRoleToUser(w http.ResponseWriter, r *http.Request) {
+	var dto AssignRoleToUserRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, `{"message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	deps := newAuthDependencies(h.db, h.settings)
+	input := usecases.AssignRoleToUserInput{
+		UserID: dto.UserID,
+		RoleID: dto.RoleID,
+	}
+
+	err := deps.assignRoleToUserUseCase.Execute(r.Context(), input)
+	if err != nil {
+		log.Printf("Assign role to user error: %v", err)
+		http.Error(w, `{"message":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
 }
